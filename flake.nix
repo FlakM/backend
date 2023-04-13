@@ -21,9 +21,13 @@
       url = "github:rustsec/advisory-db";
       flake = false;
     };
+
+    blog-static = {
+      url = "github:flakm/blog/198dbbb13e8b4aee8746f884ba21634924906c17";
+    };
   };
 
-  outputs = { self, nixpkgs, crane, fenix, flake-utils, advisory-db, ... }: {
+  outputs = { self, nixpkgs, crane, fenix, flake-utils, advisory-db, blog-static, ... }: {
     formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixpkgs-fmt;
   } //
   #               👇 this used to be  eachDefaultSystem but now we build only on linux!
@@ -68,6 +72,8 @@
         inherit cargoArtifacts;
       });
 
+
+      static = blog-static.packages.${system}.default;
     in
     {
       nixosModules.default = { config, lib, ... }: with lib;
@@ -94,11 +100,8 @@
                 ExecStart = "${my-crate}/bin/quick-start";
                 DynamicUser = "yes";
                 RuntimeDirectory = "backend";
-                RuntimeDirectoryMode = "0755";
-                StateDirectory = "backend";
-                StateDirectoryMode = "0700";
-                CacheDirectory = "backend";
-                CacheDirectoryMode = "0750";
+                PermissionsStartOnly=true;
+                ExecStartPre = "${pkgs.bash}/bin/bash -c '${pkgs.coreutils}/bin/mkdir -p $RUNTIME_DIRECTORY/assets && ls -al ${static} && ${pkgs.coreutils}/bin/cp -r ${static}/* $RUNTIME_DIRECTORY/assets'";
               };
             };
 
@@ -172,16 +175,6 @@
 
 
       devShells.default = pkgs.mkShell {
-        inputsFrom = builtins.attrValues self.checks.${system};
-
-        # Additional dev-shell environment variables can be set directly
-        # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
-
-        # Extra inputs can be added here
-        nativeBuildInputs = with pkgs; [
-          cargo
-          rustc
-        ];
       };
     });
 

@@ -36,15 +36,23 @@ makeTest
 
     server.wait_for_open_port(${toString test_port})
 
-    expected = "<h1>Hello, World!</h1>"
+    expected = "Hi from /foo"
 
     actual = client.succeed(
-            "${pkgs.curl}/bin/curl -vv http://server:${toString test_port}"
+            "${pkgs.curl}/bin/curl -vv http://server:${toString test_port}/foo"
     )
 
     if expected != actual:
         cprint("Test failed unexpected result: " + actual, "red", attrs=["bold"], file=sys.stderr)
         sys.exit(1)
+
+    # test if index.html is served
+
+
+    client.succeed(
+            "${pkgs.curl}/bin/curl -vv http://server:${toString test_port}/assets/index.html"
+    )
+
   '';
 }
 {
