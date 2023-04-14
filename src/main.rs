@@ -1,4 +1,11 @@
-use axum::{routing::get, Router};
+use axum::{
+    http::{header::CACHE_CONTROL, HeaderValue},
+    middleware::{self, Next},
+    response::Response,
+    routing::get,
+    Router,
+};
+use http::Request;
 use std::{net::SocketAddr, path::PathBuf};
 
 use tower_http::{
@@ -13,7 +20,7 @@ async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "example_static_file_server=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "backend=debug,tower_http=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -21,11 +28,11 @@ async fn main() {
     let parrent = std::env::var("RUNTIME_DIRECTORY").unwrap_or_else(|_| ".".to_string());
     let dir = std::path::Path::new(&parrent).join("assets");
 
-    println!("Serving files from {:?}", dir);
+    tracing::info!("Serving files from {:?}", dir);
     for dir in std::fs::read_dir(dir.clone()).unwrap() {
         let dir = dir.unwrap();
         let path = dir.path();
-        println!("path: {:?}", path);
+        tracing::info!("path: {:?}", path);
     }
 
     // build our application with a route
@@ -33,11 +40,29 @@ async fn main() {
 
     // run it
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("listening on {}", addr);
+    tracing::info!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.layer(TraceLayer::new_for_http()).into_make_service())
         .await
         .unwrap();
+}
+
+async fn my_middleware<B>(request: Request<B>, next: Next<B>) -> Response {
+    // do something with `request`...
+
+    let path = request.uri().path().to_lowercase();
+    let mut response = next.run(request).await;
+
+    let should_add_no_cache_header = path.contains("heap");
+    if should_add_no_cache_header {
+        tracing::warn!("appending headers!: {}", path);
+        response
+            .headers_mut()
+            .insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+        response
+    } else {
+        response
+    }
 }
 
 fn using_serve_dir_with_assets_fallback(dir: PathBuf) -> Router {
@@ -50,4 +75,5 @@ fn using_serve_dir_with_assets_fallback(dir: PathBuf) -> Router {
         .route("/foo", get(|| async { "Hi from /foo" }))
         .nest_service("/assets", serve_dir.clone())
         .fallback_service(serve_dir)
+        .layer(middleware::from_fn(my_middleware))
 }
